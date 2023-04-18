@@ -1,0 +1,6 @@
+torch==2.0.0
+pytorch-lightning==2.0.1
+datasets==2.11.0
+transformers==4.27.4
+Pillow==9.5.0
+sklearn
