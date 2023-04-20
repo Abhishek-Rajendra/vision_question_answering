@@ -1,13 +1,21 @@
 
 import argparse
+import json
+import logging
+import os
+import numpy as np
+
 from typing import Text
 
 import yaml
-
+import torch
 from data.daqaur_datamodule import DaquarDataModule
 from model import MultimodalVQAModel
-import pytorch_lightning as pl
-import os
+import lightning as L
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.loggers import TensorBoardLogger
+
+
 
 
 def main(config_path: Text) -> None:
@@ -17,41 +25,91 @@ def main(config_path: Text) -> None:
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
+    if torch.cuda.is_available():
+        print('Cuda is available, make sure you are training on GPU')
+
+    device = config["base"]["device"]
+    if device != -1:
+        torch.cuda.set_device(device)
+    else:
+        config["base"]["device"] = torch.device('cpu')
 
     # Initialize data module
     data_module = DaquarDataModule(config)
 
     data_module.setup()
 
-    num_labels = len(data_module.train_dataset.answer_space)
+    answer_space = data_module.train_dataset.answer_space
 
     # Initialize model
     model = MultimodalVQAModel(
-        num_labels=num_labels,
+        answer_space=answer_space,
+        num_labels=len(answer_space),
         intermediate_dims=config["model"]["intermediate_dims"],
         dropout=config["model"]["dropout"],
         pretrained_text_name=config["model"]["text_encoder"],
         pretrained_image_name=config["model"]["image_encoder"],
+    ).to(device)
+
+    if next(model.parameters()).is_cuda:
+        print("Model is on GPU")
+    else:
+        print("Model is on CPU")
+
+    # Set the directory name for checkpoints based on the model name
+    checkpoint_dir = 'checkpoints/{}'.format(config["model"]["name"])
+
+    class SaveMetricsCallback(L.Callback):
+        def on_train_end(self, trainer, pl_module):
+            logging.info("Training complete")
+
+            os.makedirs(config["metrics"]["metrics_folder"], exist_ok=True)
+
+            # Save trainer metrics to file
+            with open("trainer-" + config["metrics"]["metrics_file"], "w") as f:
+                callback_metrics = trainer.callback_metrics.copy()
+                for key, value in callback_metrics.items():
+                    if isinstance(value, torch.Tensor):
+                        callback_metrics[key] = str(value.item())
+                json.dump(callback_metrics, f)
+            
+            # Test the model on the test dataset
+            test_results = trainer.validate(pl_module, datamodule=data_module, ckpt_path='best')
+            
+            # Save test metrics to file
+            with open("test-" + config["metrics"]["metrics_file"], "w") as f:
+                test_metrics = test_results[0].copy()
+                for key, value in test_metrics.items():
+                    if isinstance(value, torch.Tensor):
+                        test_metrics[key] = str(value.item())
+                json.dump(test_metrics, f)
+
+    checkpoint_callback = ModelCheckpoint(
+        monitor='val_loss',
+        dirpath=checkpoint_dir,
+        # filename='checkpoint-{epoch:02d}',
+        save_top_k=3,
+        every_n_train_steps=200
     )
 
+    # Initialize TensorBoardLogger
+    logger = TensorBoardLogger("tb_logs", name=config["model"]["name"])
+
     # Initialize trainer
-    trainer = pl.Trainer(
-        gpus=config["training"]["gpus"],
-        max_epochs=config["training"]["max_epochs"],
-        progress_bar_refresh_rate=config["training"]["progress_bar_refresh_rate"],
-        **config["trainer"]
+    trainer = L.Trainer(
+        **config["trainer"],
+        logger=logger,
+        callbacks=[checkpoint_callback, SaveMetricsCallback()]        
     )
 
     # Train the model
     trainer.fit(model, data_module)
 
-    # Evaluate the model on the validation dataset
-    trainer.validate(model, datamodule=data_module.val_dataloader())
 
 
 if __name__ == '__main__':
     args_parser = argparse.ArgumentParser()
     args_parser.add_argument('--config', dest='config', required=True)
     args = args_parser.parse_args()
-    
+
     main(args.config)

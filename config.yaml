@@ -1,6 +1,6 @@
 base:
-  use_cuda: True
-
+  device: 1     # set to -1 if you don't have a GPU
+  
 data:
   dataset_folder: dataset
   images_folder: images
@@ -20,38 +20,29 @@ tokenizer:
   return_attention_mask: True
 
 model:
-  name: roberta-deit-final  # Custom name for the multimodal model
+  name: roberta-beit  # Custom name for the multimodal model
   text_encoder: roberta-base # Valid transformer model for text encoding from HuggingFace
-  image_encoder: facebook/deit-base-distilled-patch16-224  # Valid transformer model for image encoding from HuggingFace
+  image_encoder: microsoft/beit-base-patch16-224-pt22k-ft22k # Valid transformer model for image encoding from HuggingFace
   intermediate_dims: 512
   dropout: 0.5
 
-train:
-  output_dir: checkpoint
-  seed: 12345
-  num_train_epochs: 5
-  learning_rate: 5.0e-5
-  weight_decay: 0.0
-  warmup_ratio: 0.0
-  warmup_steps: 0
-  evaluation_strategy: steps
-  eval_steps: 100
-  logging_strategy: steps
-  logging_steps: 100
-  save_strategy: steps
-  save_steps: 100
-  save_total_limit: 3            # Save only the last 3 checkpoints at any given time while training 
-  metric_for_best_model: wups
-  per_device_train_batch_size: 32
-  per_device_eval_batch_size: 32
-  remove_unused_columns: False
-  dataloader_num_workers: 8
+trainer:
+  default_root_dir: checkpoint
+  max_epochs: 5
+  log_every_n_steps: 100
+  precision: 32    # set to 16 for mixed precision training
+
+training:
+  lr: 5.0e-5
+  batch_size: 32
+  num_workers: 8
   load_best_model_at_end: True
-  use_amp: True
+  num_sanity_val_steps: 0
+  val_check_interval: 100
 
 metrics:
   metrics_folder: metrics
-  metrics_file: roberta-deit-final.json
+  metrics_file: roberta-deit.json
 
 inference:
   checkpoint: checkpoint-1500

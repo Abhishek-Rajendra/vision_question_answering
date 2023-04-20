@@ -1,7 +1,7 @@
 from typing import Dict, Tuple, List
 import numpy as np
-from sklearn.metrics import accuracy_score, f1_score
 from nltk.corpus import wordnet
+from sklearn.metrics import accuracy_score, f1_score
 
 class WuPalmerScoreCalculator:
     def __init__(self, answer_space: List[str]):
@@ -76,8 +76,10 @@ class WuPalmerScoreCalculator:
     def compute_metrics(self, eval_tuple: Tuple[np.ndarray, np.ndarray]) -> Dict[str, float]:
         logits, labels = eval_tuple
         preds = logits.argmax(axis=-1)
+        preds = preds.cpu().numpy()
+        labels = labels.cpu().numpy()
         return {
             "wups": self.batch_wup_measure(labels, preds),
-            "acc": accuracy_score(labels, preds),
-            "f1": f1_score(labels, preds, average='macro')
+            "acc": accuracy_score(preds, labels),
+            "f1": f1_score(preds, labels, average='macro')
         }
