@@ -11,7 +11,26 @@
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["--config", "config.yaml"]
+            "args": [
+                "--config",
+                "config.yaml"
+            ]
+        },
+        {
+            "name": "inference.py",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/inference.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--config",
+                "config.yaml",
+                "--question",
+                "what is the colour of the bag on the chair",
+                "--img_path",
+                "dataset/images/image399.png"
+            ]
         }
     ]
 }

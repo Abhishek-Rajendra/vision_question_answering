@@ -12,10 +12,8 @@ import torch
 from data.daqaur_datamodule import DaquarDataModule
 from model import MultimodalVQAModel
 import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
-
-
 
 
 def main(config_path: Text) -> None:
@@ -28,11 +26,11 @@ def main(config_path: Text) -> None:
     if torch.cuda.is_available():
         print('Cuda is available, make sure you are training on GPU')
 
-    device = config["base"]["device"]
-    if device != -1:
-        torch.cuda.set_device(device)
-    else:
-        config["base"]["device"] = torch.device('cpu')
+    # device = config["trainer"]["devices"]
+    # if device != -1:
+    #     torch.cuda.set_device(device)
+    # else:
+    #     config["base"]["device"] = torch.device('cpu')
 
     # Initialize data module
     data_module = DaquarDataModule(config)
@@ -49,15 +47,10 @@ def main(config_path: Text) -> None:
         dropout=config["model"]["dropout"],
         pretrained_text_name=config["model"]["text_encoder"],
         pretrained_image_name=config["model"]["image_encoder"],
-    ).to(device)
-
-    if next(model.parameters()).is_cuda:
-        print("Model is on GPU")
-    else:
-        print("Model is on CPU")
+    )
 
     # Set the directory name for checkpoints based on the model name
-    checkpoint_dir = 'checkpoints/{}'.format(config["model"]["name"])
+    checkpoint_dir = os.path.join(config["training"]["checkpoint"], config["model"]["name"])
 
     class SaveMetricsCallback(L.Callback):
         def on_train_end(self, trainer, pl_module):
@@ -66,30 +59,37 @@ def main(config_path: Text) -> None:
             os.makedirs(config["metrics"]["metrics_folder"], exist_ok=True)
 
             # Save trainer metrics to file
-            with open("trainer-" + config["metrics"]["metrics_file"], "w") as f:
+            with open(config["metrics"]["metrics_folder"] + "/" + "trainer-" + config["model"]["name"] + ".json", "w") as f:
                 callback_metrics = trainer.callback_metrics.copy()
                 for key, value in callback_metrics.items():
                     if isinstance(value, torch.Tensor):
                         callback_metrics[key] = str(value.item())
                 json.dump(callback_metrics, f)
-            
+
             # Test the model on the test dataset
-            test_results = trainer.validate(pl_module, datamodule=data_module, ckpt_path='best')
-            
+            test_results = trainer.validate(
+                pl_module, datamodule=data_module, ckpt_path='best')
+
             # Save test metrics to file
-            with open("test-" + config["metrics"]["metrics_file"], "w") as f:
+            with open(config["metrics"]["metrics_folder"] + "/" + "test-" + config["model"]["name"] + ".json", "w") as f:
                 test_metrics = test_results[0].copy()
+                test_metrics["best_checkpoint_path"] = trainer.checkpoint_callback.best_model_path
                 for key, value in test_metrics.items():
                     if isinstance(value, torch.Tensor):
                         test_metrics[key] = str(value.item())
                 json.dump(test_metrics, f)
 
+    # early_stopping_callback = EarlyStopping(
+    #     monitor='val_loss',
+    #     patience=config["training"]["early_stop_patience"]
+    # )
+
     checkpoint_callback = ModelCheckpoint(
         monitor='val_loss',
         dirpath=checkpoint_dir,
-        # filename='checkpoint-{epoch:02d}',
-        save_top_k=3,
-        every_n_train_steps=200
+        filename='checkpoint-{epoch}',
+        save_top_k=config["training"]["save_top_k"],
+        save_last=True
     )
 
     # Initialize TensorBoardLogger
@@ -99,12 +99,11 @@ def main(config_path: Text) -> None:
     trainer = L.Trainer(
         **config["trainer"],
         logger=logger,
-        callbacks=[checkpoint_callback, SaveMetricsCallback()]        
+        callbacks=[checkpoint_callback, SaveMetricsCallback()]
     )
 
     # Train the model
     trainer.fit(model, data_module)
-
 
 
 if __name__ == '__main__':

@@ -90,7 +90,13 @@ class MultimodalVQAModel(L.LightningModule):
         outputs = self(input_ids, pixel_values,
                        attention_mask, token_type_ids, labels)
         loss = outputs["loss"]
-        self.log("train_loss", loss, sync_dist=True)
+        # Calculate accuracy
+        preds = torch.argmax(outputs["logits"], dim=1)
+        correct = torch.eq(preds, labels).sum().item()
+        accuracy = correct / labels.shape[0]
+        logs = {"training_accuracy": accuracy,
+                "train_loss": loss}
+        self.log_dict(logs, prog_bar=True, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx: int) -> Dict[str, torch.Tensor]:
@@ -112,5 +118,5 @@ class MultimodalVQAModel(L.LightningModule):
         self.validation_step_outputs.clear()  # clear the list for next epoch
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-5)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=1e-5)
         return optimizer

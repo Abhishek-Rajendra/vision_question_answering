@@ -79,7 +79,7 @@ class WuPalmerScoreCalculator:
         preds = preds.cpu().numpy()
         labels = labels.cpu().numpy()
         return {
-            "wups": self.batch_wup_measure(labels, preds),
-            "acc": accuracy_score(preds, labels),
-            "f1": f1_score(preds, labels, average='macro')
+            "val_wups": self.batch_wup_measure(labels, preds),
+            "val_acc": accuracy_score(preds, labels),
+            "val_f1": f1_score(preds, labels, average='macro')
         }
